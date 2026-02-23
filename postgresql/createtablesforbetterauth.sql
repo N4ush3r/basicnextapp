@@ -89,5 +89,5 @@ CREATE TABLE public.usersroles (
 -- =========================================
 -- GRANTS
 -- =========================================
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO reactuser;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO reactuser;
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO reactuser;
+-- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO reactuser;
