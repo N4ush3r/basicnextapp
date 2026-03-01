@@ -3,6 +3,7 @@
 import { signIn, getSession, signOut } from "@/lib/auth-client";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { checkDbConnection } from "@/app/actions/debug";
 import { showMessage } from "@/components/MessageModal";
 import { Eye, EyeOff, Loader2, Database } from "lucide-react";
 
@@ -17,7 +18,8 @@ export default function LoginForm({ dbHost }: LoginFormProps) {
     const [loading, setLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState("");
     const [isCapsLock, setIsCapsLock] = useState(false);
-    
+    const [debugInfo, setDebugInfo] = useState<string | null>(null);
+
     const router = useRouter();
     const emailRef = useRef<HTMLInputElement>(null);
     const passwordRef = useRef<HTMLInputElement>(null);
@@ -47,37 +49,67 @@ export default function LoginForm({ dbHost }: LoginFormProps) {
       setStatusMessage(`Connecting to database server at ${dbHost || window.location.hostname}...`);
 
       // 2. Use the cleaned variables for the sign-in
-      await signIn.email({ 
-          email: cleanEmail, 
-          password: cleanPassword 
-      }, {
-           onSuccess: async () => {
-               const res = await getSession();
-               const session = "data" in res ? res.data : res;
-               if ((session?.user as any)?.active === false) {
-                   await showMessage("Your account is inactive. Please contact the administrator.", {
-                       okColor: "bg-red-600 hover:bg-red-700"
-                   });
-                   await signOut();
-                   setLoading(false);
-                   setStatusMessage("");
-                   return;
-               }
-               setStatusMessage("Redirecting...");
-               router.push("/dashboard");
-           },
-          onError: async () => {
-              setLoading(false);
-              setStatusMessage("");
-              
-              await showMessage("Invalid email or password.", {
-                  okColor: "bg-red-600 hover:bg-red-700"
-              });
-  
-              passwordRef.current?.focus();
-              passwordRef.current?.select();
-          }
-      });
+      try {
+        await signIn.email({ 
+            email: cleanEmail, 
+            password: cleanPassword 
+        }, {
+             onSuccess: async () => {
+                 const res = await getSession();
+                 const session = "data" in res ? res.data : res;
+                 if ((session?.user as any)?.active === false) {
+                     await showMessage("Your account is inactive. Please contact the administrator.", {
+                         okColor: "bg-red-600 hover:bg-red-700"
+                     });
+                     await signOut();
+                     setLoading(false);
+                     setStatusMessage("");
+                     return;
+                 }
+                 setStatusMessage("Redirecting...");
+                 router.push("/dashboard");
+             },
+            onError: async (ctx) => {
+                 setLoading(false);
+                 setStatusMessage("");
+                 
+                 const errorMsg = ctx.error.message || "Invalid email or password.";
+                 await showMessage(errorMsg, {
+                     okColor: "bg-red-600 hover:bg-red-700"
+                 });
+     
+                 // If invalid credentials, maybe connection is fine but data is wrong
+                 // But if error is weird, run debug
+                 if (errorMsg.includes("Invalid")) {
+                    passwordRef.current?.focus();
+                    passwordRef.current?.select();
+                 } else {
+                    // Try to diagnose connection
+                    const diagnosis = await checkDbConnection();
+                    if (!diagnosis.success) {
+                        setDebugInfo(`DB Error: ${diagnosis.error} (Code: ${diagnosis.code})`);
+                    }
+                 }
+             }
+         });
+       } catch (err: any) {
+         setLoading(false);
+         setStatusMessage("");
+         console.error("Login error:", err);
+         
+         const diagnosis = await checkDbConnection();
+         let extraMsg = "";
+         if (!diagnosis.success) {
+             extraMsg = `\nServer DB Error: ${diagnosis.error}`;
+             setDebugInfo(`Failed: ${diagnosis.error} (Host: ${diagnosis.env?.host})`);
+         } else {
+             setDebugInfo(`DB OK: Connected to ${diagnosis.data?.current_database} as ${diagnosis.data?.current_user}`);
+         }
+
+         await showMessage("Connection failed. " + (err.message || "") + extraMsg, {
+             okColor: "bg-red-600 hover:bg-red-700"
+         });
+       }
     };
     
     return (
@@ -86,6 +118,12 @@ export default function LoginForm({ dbHost }: LoginFormProps) {
                 <div className="text-center">
                     <h1 className="text-3xl font-bold tracking-tight">BasicApp</h1>
                     <p className="text-gray-500 mt-2">Sign in to your account</p>
+                    {/* Debug Info */}
+                    {debugInfo && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 break-all text-left font-mono">
+                            <strong>Debug:</strong> {debugInfo}
+                        </div>
+                    )}
                 </div>
 
                 <div className="space-y-4">
