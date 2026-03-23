@@ -1,163 +1,96 @@
 "use server";
 
 import { query } from "@/lib/db";
-import { headers, cookies } from "next/headers";
-import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-export interface UserProfile {
-  id: string;
-  email: string;
+// =========================================
+// UOM (Units of Measure) Actions
+// =========================================
+export interface Uom {
+  id: string; // BIGINT is returned as a string by node-postgres to preserve precision
   name: string;
-  fullname: string | null;
-  birthdate: Date | null;
-  gender: string | null;
-  active: boolean;
+  description: string | null;
 }
 
-export async function getMyProfile(expectedUserId?: string): Promise<UserProfile | null> {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    return null;
-  }
-
-  // Security Check: Ensure the session matches the client's expectation
-  // This prevents the "Admin Tab A" from loading "User Tab B" data if the session cookie changed
-  if (expectedUserId && session.user.id !== expectedUserId) {
-    throw new Error("SessionMismatch");
-  }
-
-  const { rows } = await query<UserProfile>(
-    'SELECT id, email, name, fullname, birthdate, gender, active FROM public.users WHERE id = $1',
-    [session.user.id]
-  );
-
-  return rows[0] || null;
+export async function getUoms(): Promise<Uom[]> {
+  const { rows } = await query<Uom>("SELECT * FROM uom ORDER BY id DESC");
+  return rows;
 }
 
-export async function updateMyProfile(data: {
+export async function createUom(data: Omit<Uom, "id">) {
+  await query("INSERT INTO uom (name, description) VALUES ($1, $2)", [data.name, data.description || null]);
+  revalidatePath("/dashboard/medical/uom");
+  revalidatePath("/dashboard/medical/tests");
+}
+
+export async function updateUom(data: Uom) {
+  await query("UPDATE uom SET name = $1, description = $2 WHERE id = $3", [data.name, data.description || null, data.id]);
+  revalidatePath("/dashboard/medical/uom");
+  revalidatePath("/dashboard/medical/tests");
+}
+
+export async function deleteUom(id: string) {
+  await query("DELETE FROM uom WHERE id = $1", [id]);
+  revalidatePath("/dashboard/medical/uom");
+  revalidatePath("/dashboard/medical/tests");
+}
+
+// =========================================
+// Test Categories Actions
+// =========================================
+export interface TestCategory {
   id: string;
-  email: string;
   name: string;
-  fullname: string;
-  birthdate: string;
-  gender: string;
-}): Promise<void> {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
-
-  if (session.user.id !== data.id) {
-    throw new Error("SessionMismatch");
-  }
-
-  await query(
-    `UPDATE public.users SET 
-      email = $2, 
-      name = $3, 
-      fullname = $4, 
-      birthdate = $5, 
-      gender = $6,
-      "updatedAt" = NOW()
-    WHERE id = $1`,
-    [
-      data.id,
-      data.email,
-      data.name,
-      data.fullname || null,
-      data.birthdate ? new Date(data.birthdate) : null,
-      data.gender || null
-    ]
-  );
-  
-  revalidatePath("/dashboard");
+  description: string | null;
 }
 
-export async function changeMyPassword(userId: string, newPassword: string): Promise<void> {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
-
-  if (session.user.id !== userId) {
-    throw new Error("SessionMismatch");
-  }
-
-  const cookieStore = await cookies();
-  const originalToken = cookieStore.get("better-auth.session_token")?.value;
-
-  // Generate hash using dummy user trick
-  const dummyEmail = `temp-${Date.now()}@temp.com`;
-  const dummyUser = await auth.api.signUpEmail({
-      body: {
-          email: dummyEmail,
-          password: newPassword,
-          name: "Temp",
-          active: false
-      } as any
-  });
-
-  // Restore the original session to prevent the dummy user from logging in
-  if (originalToken) {
-    cookieStore.set("better-auth.session_token", originalToken);
-  } else {
-    cookieStore.delete("better-auth.session_token");
-  }
-
-  if (!dummyUser) {
-      throw new Error("Failed to generate password hash");
-  }
-
-  // Get the hash
-  const hashRes = await query<{password: string}>(
-      `SELECT password FROM public.accounts WHERE "userId" = $1`,
-      [dummyUser.user.id]
-  );
-  
-  const hashedPassword = hashRes.rows[0].password;
-
-  // Delete dummy
-  await query(`DELETE FROM public.accounts WHERE "userId" = $1`, [dummyUser.user.id]);
-  await query(`DELETE FROM public.users WHERE id = $1`, [dummyUser.user.id]);
-  await query(`DELETE FROM public.usersroles WHERE "userId" = $1`, [dummyUser.user.id]);
-
-  // Update target user account
-  const accountRes = await query<{id: string}>(
-      `SELECT id FROM public.accounts WHERE "userId" = $1 AND "providerId" = 'credential'`,
-      [userId]
-  );
-
-  if (accountRes.rows.length > 0) {
-      await query(
-          `UPDATE public.accounts SET password = $2, "updatedAt" = NOW() WHERE id = $1`,
-          [accountRes.rows[0].id, hashedPassword]
-      );
-  } else {
-      // Create new account if missing (should not happen for credential user, but safe fallback)
-      await query(
-          `INSERT INTO public.accounts (
-              id, "accountId", "providerId", "userId", password, "createdAt", "updatedAt"
-          ) VALUES (
-              $1, $2, 'credential', $3, $4, NOW(), NOW()
-          )`,
-          [
-              'acc-' + crypto.randomUUID(),
-              userId, 
-              userId,
-              hashedPassword
-          ]
-      );
-  }
-  
-  revalidatePath("/dashboard");
+export async function getCategories(): Promise<TestCategory[]> {
+  const { rows } = await query<TestCategory>("SELECT * FROM testcategories ORDER BY id DESC");
+  return rows;
 }
+
+export async function createCategory(data: Omit<TestCategory, "id">) {
+  await query("INSERT INTO testcategories (name, description) VALUES ($1, $2)", [data.name, data.description || null]);
+  revalidatePath("/dashboard/medical/categories");
+  revalidatePath("/dashboard/medical/tests");
+}
+
+export async function updateCategory(data: TestCategory) {
+  await query("UPDATE testcategories SET name = $1, description = $2 WHERE id = $3", [data.name, data.description || null, data.id]);
+  revalidatePath("/dashboard/medical/categories");
+  revalidatePath("/dashboard/medical/tests");
+}
+
+export async function deleteCategory(id: string) {
+  await query("DELETE FROM testcategories WHERE id = $1", [id]);
+  revalidatePath("/dashboard/medical/categories");
+  revalidatePath("/dashboard/medical/tests");
+}
+
+// =========================================
+// Medical Tests Actions
+// =========================================
+export interface MedicalTest {
+  id: string;
+  name: string;
+  description: string | null;
+  iduom: string | null;
+  idcategory: string | null;
+  normalmin: number | null;
+  normalmax: number | null;
+  uom_name?: string; // Derived from JOIN
+  category_name?: string; // Derived from JOIN
+}
+
+export async function getMedicalTests(): Promise<MedicalTest[]> {
+  const { rows } = await query<MedicalTest>(`
+    SELECT m.*, u.name as uom_name, c.name as category_name 
+    FROM medicaltests m
+    LEFT JOIN uom u ON m.iduom = u.id
+    LEFT JOIN testcategories c ON m.idcategory = c.id
+    ORDER BY m.id DESC
+  `);
+  return rows;
+}
+
+// Additional MedicalTest Actions (Create/Update/Delete) can be added similarly here.

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { House, UserCog, ChevronDown, ShieldCheck, LucideIcon, LogOut } from "lucide-react";
+import { House, UserCog, ChevronDown, ShieldCheck, LucideIcon, LogOut, Stethoscope, TestTube, FolderHeart, Ruler } from "lucide-react";
 import { useSession, signOut } from "@/lib/auth-client";
 import ConfirmModal from "@/components/ConfirmModal";
 import { showMessage } from "@/components/MessageModal";
@@ -221,6 +221,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { label: "Role Management", onClick: () => handleAction("Role Management") },
   ];
 
+  const medicalItems = [
+    { label: "Medical Tests", onClick: () => { setOpenMenu(null); router.push("/dashboard/medical/tests"); }, icon: TestTube },
+    { label: "Test Categories", onClick: () => { setOpenMenu(null); router.push("/dashboard/medical/categories"); }, icon: FolderHeart },
+    { label: "Units of Measurements", onClick: () => { setOpenMenu(null); router.push("/dashboard/medical/uom"); }, icon: Ruler },
+  ];
+
   const handleTimeoutLogout = async () => {
     await signOut();
     router.push("/");
@@ -246,6 +252,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <NavDropdown 
               label="My Profile" Icon={UserCog} items={profileItems} 
               isOpen={openMenu === "profile"} onToggle={() => toggleMenu("profile")} 
+            />
+            <NavDropdown 
+              label="Medical" Icon={Stethoscope} items={medicalItems} 
+              isOpen={openMenu === "medical"} onToggle={() => toggleMenu("medical")} 
             />
             <NavDropdown 
               label="Admin" Icon={ShieldCheck} items={adminItems} 
